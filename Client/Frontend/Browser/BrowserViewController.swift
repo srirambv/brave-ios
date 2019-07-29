@@ -203,6 +203,7 @@ class BrowserViewController: UIViewController {
         Preferences.General.tabBarVisibility.observe(from: self)
         Preferences.Shields.allShields.forEach { $0.observe(from: self) }
         Preferences.Privacy.blockAllCookies.observe(from: self)
+        Preferences.General.allowBackgroundMediaPlayback.observe(from: self)
         // Lists need to be compiled before attempting tab restoration
         contentBlockListDeferred = ContentBlockerHelper.compileBundledLists()
     }
@@ -3039,6 +3040,12 @@ extension BrowserViewController: PreferencesObserver {
             } else {
                 tabManager.reloadSelectedTab()
             }
+        case Preferences.General.allowBackgroundMediaPlayback.key:
+            tabManager.allTabs.forEach({
+                if let webView = $0.webView {
+                    BackgroundMediaPlayback.setMediaBackgroundPlayback(for: webView)
+                }
+            })
         default:
             log.debug("Received a preference change for an unknown key: \(key) on \(type(of: self))")
             break
