@@ -870,19 +870,35 @@ class BrowserViewController: UIViewController {
     }
 
     func finishEditingAndSubmit(_ url: URL, visitType: VisitType) {
-        topToolbar.currentURL = url
-        topToolbar.leaveOverlayMode()
+        let javascriptPrefix = "javascript:"
+        if url.absoluteString.hasPrefix(javascriptPrefix) {
+            topToolbar.leaveOverlayMode()
+            
+            guard let tab = tabManager.selectedTab else {
+                return
+            }
+            
+            if let webView = tab.webView, let unescapedURL = url.absoluteString.removingPercentEncoding {
+                resetSpoofedUserAgentIfRequired(webView, newURL: url)
+                
+                let code = String(unescapedURL.dropFirst(javascriptPrefix.count))
+                webView.evaluateJavaScript(code, completionHandler: nil)
+            }
+        } else {
+            topToolbar.currentURL = url
+            topToolbar.leaveOverlayMode()
 
-        guard let tab = tabManager.selectedTab else {
-            return
-        }
+            guard let tab = tabManager.selectedTab else {
+                return
+            }
 
-        if let webView = tab.webView {
-            resetSpoofedUserAgentIfRequired(webView, newURL: url)
-        }
+            if let webView = tab.webView {
+                resetSpoofedUserAgentIfRequired(webView, newURL: url)
+            }
 
-        if let nav = tab.loadRequest(PrivilegedRequest(url: url) as URLRequest) {
-            self.recordNavigationInTab(tab, navigation: nav, visitType: visitType)
+            if let nav = tab.loadRequest(PrivilegedRequest(url: url) as URLRequest) {
+                self.recordNavigationInTab(tab, navigation: nav, visitType: visitType)
+            }
         }
     }
 
