@@ -8,12 +8,12 @@ import BraveRewardsUI
 import Data
 import Shared
 
+private let log = Logger.rewardsLogger
+
 struct RewardsHelper {
     static func configureRewardsLogs(showFileName: Bool = true, showLine: Bool = true) {
         RewardsLogger.configure(logCallback: { logLevel, line, file, data in
             if data.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return }
-            
-            let logger = Logger.rewardsLogger
             
             var extraInfo = ""
             
@@ -26,11 +26,11 @@ struct RewardsHelper {
             let logOutput = extraInfo.isEmpty ? data : "\(extraInfo) \(data)"
             
             switch logLevel {
-            case .logDebug: logger.debug(logOutput)
+            case .logDebug: log.debug(logOutput)
             // Response and request log levels are ledger-specific.
-            case .logInfo, .logResponse, .logRequest: logger.info(logOutput)
-            case .logWarning: logger.warning(logOutput)
-            case .logError: logger.error(logOutput)
+            case .logInfo, .logResponse, .logRequest: log.info(logOutput)
+            case .logWarning: log.warning(logOutput)
+            case .logError: log.error(logOutput)
             }
         }, withFlush: nil)
     }
@@ -47,15 +47,22 @@ extension RewardsPanelController: PopoverContentComponent {
 }
 
 extension BrowserViewController {
+    func updateRewardsButtonState() {
+        if !isViewLoaded { return }
+        self.topToolbar.locationView.rewardsButton.isVerified = self.publisher?.verified ?? false
+        self.topToolbar.locationView.rewardsButton.notificationCount = self.rewards?.ledger.notifications.count ?? 0
+    }
+
     func showBraveRewardsPanel() {
         if UIDevice.current.userInterfaceIdiom != .pad && UIApplication.shared.statusBarOrientation.isLandscape {
             let value = UIInterfaceOrientation.portrait.rawValue
             UIDevice.current.setValue(value, forKey: "orientation")
         }
         
-        guard let url = tabManager.selectedTab?.url, let rewards = rewards else { return }
+        guard let tab = tabManager.selectedTab, let url = tab.webView?.url, let rewards = rewards else { return }
         let braveRewardsPanel = RewardsPanelController(
             rewards,
+            tabId: UInt64(tab.rewardsId),
             url: url,
             faviconURL: url,
             delegate: self,
@@ -65,6 +72,14 @@ extension BrowserViewController {
         let popover = PopoverController(contentController: braveRewardsPanel, contentSizeBehavior: .preferredContentSize)
         popover.addsConvenientDismissalMargins = false
         popover.present(from: topToolbar.locationView.rewardsButton, on: self)
+        popover.popoverDidDismiss = { _ in
+            if let tabId = self.tabManager.selectedTab?.rewardsId, self.rewards?.ledger.selectedTabId == 0 {
+                // Show the tab currently visible
+                self.rewards?.ledger.selectedTabId = tabId
+            }
+        }
+        // Hide the current tab
+        rewards.ledger.selectedTabId = 0
     }
 }
 
@@ -83,6 +98,10 @@ extension BrowserViewController: RewardsUIDelegate {
 }
 
 extension BrowserViewController: RewardsDataSource {
+    func displayString(for url: URL) -> String? {
+        return url.host
+    }
+    
     func retrieveFavicon(for pageURL: URL, faviconURL: URL?, completion: @escaping (FaviconData?) -> Void) {
         let favicon = UIImageView()
         DispatchQueue.main.async {
@@ -93,7 +112,26 @@ extension BrowserViewController: RewardsDataSource {
         }
     }
     
-    func displayString(for url: URL) -> String? {
-        return url.host
+    func pageHTML(for tabId: UInt64, completionHandler: @escaping (String?) -> Void) {
+        guard let tab = tabManager.tabsForCurrentMode.first(where: { $0.rewardsId == tabId }),
+            let webView = tab.webView else {
+                completionHandler(nil)
+                return
+        }
+        
+        let getHtmlToStringJSCall = "document.documentElement.outerHTML.toString()"
+        
+        DispatchQueue.main.async {
+            webView.evaluateJavaScript(getHtmlToStringJSCall, completionHandler: { html, error in
+                if let htmlString = html as? String {
+                    completionHandler(htmlString)
+                } else {
+                    if let error = error {
+                        log.error("Failed to get page HTML with JavaScript: \(error)")
+                    }
+                    completionHandler(nil)
+                }
+            })
+        }
     }
 }
