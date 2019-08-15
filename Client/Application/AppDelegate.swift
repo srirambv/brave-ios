@@ -242,6 +242,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate, UIViewControllerRestorati
         
         let isFirstLaunch = Preferences.General.isFirstLaunch.value
         Preferences.General.isFirstLaunch.value = false
+        Preferences.Review.launchCount.value += 1
         
         if isFirstLaunch {
             FavoritesHelper.addDefaultFavorites()
